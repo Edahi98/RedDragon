@@ -4,6 +4,8 @@ Servicio que convierte documentos (`doc`, `docx`, `xls`, `xlsx`, `pdf`) a XML, e
 
 Incluye un backend en **FastAPI** y un frontend en **React + Vite + TailwindCSS** para probar el flujo end-to-end.
 
+![Entorno de pruebas de RedDragon](docs/assets/test-environment.png)
+
 ---
 
 ## 📐 Arquitectura
