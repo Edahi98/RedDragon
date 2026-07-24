@@ -30,7 +30,7 @@ graph TD
         Preservice["📁 preservices/<br/>preservice_filemanager.py"]
         Orchestrator["🧭 orchestrators/<br/>ocr_orchestrator.py"]
         XmlOrch["🧭 orchestrators/<br/>xml_orchestrator.py"]
-        Services["🔧 services/<br/>pdf · xmljava · xml · pipeline · tsubasa"]
+        Services["🔧 services/<br/>pdf · xmljava · xml · pipeline · tsubasa · cross_encoder"]
         Model["📦 models/<br/>pipeline_models.py"]
         View["🖼️ views/<br/>pipeline_view.py"]
     end
@@ -63,8 +63,9 @@ sequenceDiagram
     participant XS as 🔧 XmlService
     participant PS as 🔧 PipelineService
     participant TS as 🔧 TsubasaService
+    participant CE as 🧠 CrossEncoderService
 
-    U->>C: file + pipeline (json) + mode
+    U->>C: file + pipeline (json) + mode [+ query, top_k]
     C->>FM: temp_input_file(contents, extension)
     FM-->>C: input_path (temporal)
     C->>OCR: run(input_path, pipeline, mode)
@@ -81,6 +82,10 @@ sequenceDiagram
     PS-->>OCR: pipeline transformado
     OCR->>TS: execute(pipeline)
     TS-->>OCR: result_data (lista de valores)
+    opt query presente
+        OCR->>CE: rerank(query, result_data, top_k)
+        CE-->>OCR: result_data reordenado/filtrado
+    end
     alt mode == pruned_xml
         OCR->>XS: prune_xml(xml_path, result_data)
         XS-->>OCR: ruta xml podado
@@ -108,6 +113,7 @@ RedDragon/
 ├── models/                        # 📦 schemas Pydantic
 ├── views/                          # 🖼️ formato de respuesta
 ├── resources/                       # 📄 binarios (xmljava-docker, tsubasa)
+├── models_ai/                        # 🧠 modelos de Hugging Face (no versionado, ver abajo)
 ├── scripts/start.sh                  # 🐧 arranque nativo en Linux (sin Docker)
 ├── docs/architecture.md               # 📚 arquitectura detallada
 ├── frontend/                            # ⚛️ React + Vite + TailwindCSS
@@ -127,6 +133,23 @@ RedDragon/
 - 🟢 Node.js + npm (solo para el frontend)
 - 🐳 Docker (opcional, recomendado)
 - 🐧 Linux (los binarios en `resources/` son ELF; en Windows solo funcionan dentro de Docker/WSL)
+- 🧠 El modelo de reranking (ver [🧠 Modelo de reranking](#-modelo-de-reranking-cross-encoder) abajo)
+
+---
+
+## 🧠 Modelo de reranking (cross-encoder)
+
+`services/cross_encoder_service.py` usa el modelo **[jina-reranker-v2-base-multilingual](https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual)** vía `sentence-transformers`. No está versionado en este repo (pesa varios GB) — hay que descargarlo aparte y colocarlo en `models_ai/jina-reranker-v2-base-multilingual`:
+
+```bash
+# Opción A: git + git-lfs
+git clone https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual models_ai/jina-reranker-v2-base-multilingual
+
+# Opción B: huggingface-cli
+huggingface-cli download jinaai/jina-reranker-v2-base-multilingual --local-dir models_ai/jina-reranker-v2-base-multilingual
+```
+
+> ⚠️ Requiere `transformers` en el rango `>=4.41.0,<5` (ya fijado en `pyproject.toml`) — el código custom del modelo (`trust_remote_code=True`) depende de un símbolo interno que las versiones `5.x` de `transformers` eliminaron.
 
 ---
 
@@ -185,6 +208,8 @@ npm run dev
 | `file` | archivo | `doc`, `docx`, `xls`, `xlsx` o `pdf` |
 | `pipeline` | string (JSON) | grafo de nodos (`graph.nodes.*`) a ejecutar en Tsubasa |
 | `mode` | string | `"pruned_xml"` o `"text_list"` |
+| `query` | string (opcional) | si se envía, reordena `result_data` por relevancia semántica contra esta query (`services/cross_encoder_service.py`) antes de podar/filtrar |
+| `top_k` | int (opcional) | junto con `query`, recorta el resultado reordenado a los `top_k` más relevantes |
 
 **Respuesta** (`200`):
 
