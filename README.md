@@ -1,5 +1,7 @@
 # 🐉 RedDragon
 
+> 🏷️ **Categoría:** Intelligent Document Processing (IDP) platform con motor de pipelines de datos embebido.
+
 **RedDragon es la unión de todo**: es el servicio que **consume** a **[TsubasaEngine](https://github.com/Edahi98/TsubasaEngine)** (el motor de ejecución) y a **[Denki Pipeline Designer](https://github.com/Edahi98/DenkiPepelineDesigner)** (de donde viene la lógica de extracción de documentos) — ambos existen como piezas pensadas para ser integradas por RedDragon, no como alternativas o proyectos paralelos.
 
 Un único endpoint (`POST /execute_pipeline`) recibe un documento (`doc`, `docx`, `xls`, `xlsx`, `pdf`) y un pipeline en JSON, y hace de punta a punta lo siguiente:
