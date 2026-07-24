@@ -1,8 +1,15 @@
 # 🐉 RedDragon
 
-Servicio que convierte documentos (`doc`, `docx`, `xls`, `xlsx`, `pdf`) a XML, extrae su contenido, ejecuta un **pipeline de transformación de datos** contra un motor externo (**Tsubasa**) y devuelve el resultado final como XML podado o como lista de strings.
+**RedDragon es la unión de todo**: toma el extractor de documentos de **[Denki Pipeline Designer](https://github.com/Edahi98/DenkiPepelineDesigner)** (su app de escritorio Electron) y el motor de ejecución de **[TsubasaEngine](https://github.com/Edahi98/TsubasaEngine)** — que hoy viven repartidos en dos proyectos distintos — y los junta en **un solo servicio HTTP autocontenido** — sin canvas, sin Electron, sin instalador de escritorio.
 
-Incluye un backend en **FastAPI** y un frontend en **React + Vite + TailwindCSS** para probar el flujo end-to-end.
+Un único endpoint (`POST /execute_pipeline`) recibe un documento (`doc`, `docx`, `xls`, `xlsx`, `pdf`) y un pipeline en JSON, y hace de punta a punta lo que en Denki están repartido entre su proceso `main` y su backend externo:
+
+1. 📄 **Extracción** — convierte el documento a XML (`xmljava`) y, si hace falta, pasa antes por PDF → DOCX.
+2. 🔀 **Inyección de datos** — el contenido extraído reemplaza los nodos `"data"` del pipeline.
+3. 🪽 **Ejecución** — el pipeline ya completo corre contra **[Tsubasa](https://github.com/Edahi98/TsubasaEngine)** (Polars + scikit-learn + Bokeh sobre un AST), el mismo motor (`tsubasa.exe`) que arranca Denki.
+4. ✂️ **Resultado** — el resultado de Tsubasa se usa para podar el XML original o para filtrar su texto, según el `mode` pedido.
+
+Incluye además un frontend mínimo en **React + Vite + TailwindCSS** para probar ese flujo end-to-end sin necesidad del canvas visual de Denki.
 
 ![Entorno de pruebas de RedDragon](docs/assets/test-environment.png)
 
@@ -186,3 +193,12 @@ npm run dev
   "result": ["..."]
 }
 ```
+
+---
+
+## 🔗 Proyectos relacionados
+
+RedDragon no reemplaza a ninguno de los dos — **los une**, y no como un simple wrapper que llama a sus binarios: es su propio entorno completo, con arquitectura en capas (`controllers` → `preservices`/`orchestrators` → `services`), build Docker multi-etapa, script de arranque nativo para Linux y un frontend propio para probarlo — todo construido alrededor de lo que Denki y Tsubasa resuelven cada uno por su lado.
+
+- 🪽 **[TsubasaEngine](https://github.com/Edahi98/TsubasaEngine)** — el motor de ejecución (`polars_ast`) del que sale el binario `tsubasa`. RedDragon lo integra como una pieza más de su arquitectura: lo arranca y gestiona como singleton (`services/tsubasa_service.py`), ligado al ciclo de vida del propio servidor.
+- ⚡ **[Denki Pipeline Designer](https://github.com/Edahi98/DenkiPepelineDesigner)** — el editor visual de escritorio (Electron + React + reactflow) que arma el JSON del pipeline arrastrando nodos. RedDragon reconstruye ese mismo flujo de extracción y ejecución (`xmljava`, PDF→DOCX, Tsubasa) como parte de su propio backend orquestado, sin depender de Electron ni de la app de escritorio.
