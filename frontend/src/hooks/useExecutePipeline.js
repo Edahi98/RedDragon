@@ -6,7 +6,7 @@ export function useExecutePipeline() {
   const [error, setError] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  const execute = async ({ file, pipeline, mode }) => {
+  const execute = async ({ file, pipeline, mode, query, topK }) => {
     setIsLoading(true)
     setError(null)
     setResult(null)
@@ -16,6 +16,8 @@ export function useExecutePipeline() {
       formData.append('file', file)
       formData.append('pipeline', pipeline)
       formData.append('mode', mode)
+      if (query) formData.append('query', query)
+      if (query && topK) formData.append('top_k', topK)
 
       const response = await fetch(EXECUTE_PIPELINE_URL, { method: 'POST', body: formData })
       const data = await response.json()
