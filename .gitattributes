@@ -1,0 +1,2 @@
+resources/xmljava-docker filter=lfs diff=lfs merge=lfs -text
+resources/tsubasa filter=lfs diff=lfs merge=lfs -text
