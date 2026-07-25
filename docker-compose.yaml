@@ -1,0 +1,13 @@
+services:
+  reddragon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: reddragon:latest
+    container_name: reddragon
+    ports:
+      - "8000:8000"
+      - "5000:5000"
+    volumes:
+      - ./models_ai:/app/models_ai:ro
+    restart: unless-stopped
