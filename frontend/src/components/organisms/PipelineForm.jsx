@@ -5,6 +5,7 @@ import { PipelineJsonField } from '../molecules/PipelineJsonField'
 import { ModeField } from '../molecules/ModeField'
 import { QueryField } from '../molecules/QueryField'
 import { TopKField } from '../molecules/TopKField'
+import { SchemaField } from '../molecules/SchemaField'
 import { pipelineModes } from '../../data/pipelineModes'
 import { samplePipelineJson } from '../../data/samplePipeline'
 import { useFileText } from '../../hooks/useFileText'
@@ -15,13 +16,21 @@ export function PipelineForm({ onSubmit, isLoading }) {
   const [mode, setMode] = useState(pipelineModes[0].value)
   const [query, setQuery] = useState('')
   const [topK, setTopK] = useState('')
+  const [schema, setSchema] = useState('')
 
   const loadPipelineFromFile = useFileText(setPipeline)
 
   const handleSubmit = (event) => {
     event.preventDefault()
     if (!file) return
-    onSubmit({ file, pipeline, mode, query: query || null, topK: query ? topK || null : null })
+    onSubmit({
+      file,
+      pipeline,
+      mode,
+      query: query || null,
+      topK: query ? topK || null : null,
+      schema: schema || null,
+    })
   }
 
   return (
@@ -42,6 +51,7 @@ export function PipelineForm({ onSubmit, isLoading }) {
         onChange={(event) => setTopK(event.target.value)}
         disabled={!query}
       />
+      <SchemaField value={schema} onChange={(event) => setSchema(event.target.value)} />
       <Button type="submit" disabled={!file || isLoading}>
         {isLoading ? 'Ejecutando...' : 'Ejecutar pipeline'}
       </Button>
