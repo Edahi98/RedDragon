@@ -7,6 +7,12 @@ from bs4 import BeautifulSoup
 class XmlService:
     """Extrae y poda contenido de archivos XML"""
 
+    BOILERPLATE_TAGS = ("Footers", "Headers")
+
+    def _strip_boilerplate(self, soup: BeautifulSoup) -> None:
+        for tag in soup.find_all(self.BOILERPLATE_TAGS):
+            tag.decompose()
+
     def _read_file(self, xml_path: str) -> str:
         if not os.path.exists(xml_path):
             raise FileNotFoundError(f"XML file not found: {xml_path}")
@@ -33,6 +39,7 @@ class XmlService:
 
     def extract_tables(self, xml_path: str) -> list[str]:
         soup = self._build_soup(self._read_file(xml_path))
+        self._strip_boilerplate(soup)
 
         flat_data: list[str] = []
 
@@ -67,10 +74,20 @@ class XmlService:
         return {self._clean(v) for v in valid_set}
 
     def _is_valid(self, text: str, valid_cleaned: set[str]) -> bool:
-        return any(self._clean(text) in v for v in valid_cleaned)
+        cleaned = self._clean(text).lower()
+
+        for v in valid_cleaned:
+            v_lower = v.lower()
+            if cleaned == v_lower:
+                return True
+            if len(cleaned) >= 4 and len(v_lower) >= 4 and (cleaned in v_lower or v_lower in cleaned):
+                return True
+
+        return False
 
     def prune_xml(self, xml_path: str, valid_data: dict | list) -> str:
         soup = self._build_soup(self._read_file(xml_path), fallback=True)
+        self._strip_boilerplate(soup)
 
         valid_cleaned = self._valid_cleaned_set(valid_data)
 
@@ -112,6 +129,7 @@ class XmlService:
 
     def extract_text(self, xml_path: str, valid_data: dict | list) -> list[str]:
         soup = self._build_soup(self._read_file(xml_path), fallback=True)
+        self._strip_boilerplate(soup)
 
         valid_cleaned = self._valid_cleaned_set(valid_data)
 
