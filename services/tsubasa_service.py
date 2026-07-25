@@ -60,7 +60,10 @@ class TsubasaService:
 
     def execute(self, pipeline: dict) -> list:
         response = requests.post(f"http://{self.host}:{self.port}/execute", json=pipeline)
-        response.raise_for_status()
+
+        if not response.ok:
+            raise RuntimeError(f"tsubasa /execute failed ({response.status_code}): {response.text}")
+
         return self._flatten_values(response.json())
 
     def _flatten_values(self, result: dict) -> list:
