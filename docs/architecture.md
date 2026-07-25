@@ -38,7 +38,7 @@ service → binarios externos (resources/*) o librerías (bs4, pdf2docx, request
 ### `controllers/` — Controller
 
 - **`pipeline_controller.py`**: expone `POST /execute_pipeline`.
-  - Recibe `file` (UploadFile), `pipeline` (JSON como string), `mode` (`"pruned_xml"` | `"text_list"`) y opcionalmente `query`/`top_k` (para reranking con `CrossEncoderService`) vía `multipart/form-data`.
+  - Recibe `file` (UploadFile), `pipeline` (JSON como string), `mode` (`"pruned_xml"` | `"text_list"`) y opcionalmente `query`/`top_k` (reranking con `CrossEncoderService`) y `schema` (JSON como string, extracción estructurada con `NuExtractService`) vía `multipart/form-data`.
   - Valida extensión (`ALLOWED_EXTENSIONS`, importado de `xml_orchestrator`) y `mode` (`ALLOWED_MODES`, importado de `ocr_orchestrator`).
   - Usa `PreserviceFileManager` para materializar el archivo subido en disco, delega la orquestación a `OcrOrchestrator.run(...)` y arma la respuesta con `views.pipeline_view`.
 
@@ -51,14 +51,15 @@ service → binarios externos (resources/*) o librerías (bs4, pdf2docx, request
 - **`xml_orchestrator.py`**: `XmlOrchestrator.get_xml(input_path) -> str`.
   Convierte `doc/docx/xls/xlsx/pdf` a XML: si la extensión es `.pdf`, primero pasa por `PdfService.convert_to_docx`; luego siempre pasa por `XmlJavaService.convert` (binario `resources/xmljava-docker`).
 
-- **`ocr_orchestrator.py`**: `OcrOrchestrator.run(input_path, pipeline, mode, query=None, top_k=None) -> str | list[str]`.
+- **`ocr_orchestrator.py`**: `OcrOrchestrator.run(input_path, pipeline, mode, query=None, top_k=None, schema=None) -> str | list[str] | dict`.
   Flujo completo:
   1. `XmlOrchestrator.get_xml(input_path)` → `xml_path`.
   2. `XmlService.extract_tables(xml_path)` → datos extraídos del XML.
   3. `PipelineService.replace_data(pipeline, extracted_data)` → reemplaza cada llave `"data"` del pipeline (en cualquier nivel de anidamiento) con los datos extraídos.
   4. `TsubasaService.execute(pipeline)` → envía el pipeline transformado al servidor Tsubasa y recibe una lista plana de valores.
-  5. (Opcional) si se pasa `query`, `CrossEncoderService.rerank(query, result_data, top_k)` reordena/recorta `result_data` por relevancia semántica antes del paso final.
-  6. Según `mode`:
+  5. (Opcional) si se pasa `query`, `CrossEncoderService.rerank(query, result_data, top_k)` reordena/recorta `result_data` por relevancia semántica.
+  6. (Opcional) si se pasa `schema`, `NuExtractService.extract(texto_unido, schema)` rellena el esquema JSON con datos de `result_data` (ya reordenado si hubo `query`) y **su resultado se devuelve directamente**, sin pasar por el paso 7.
+  7. Según `mode`:
      - `"pruned_xml"` → `XmlService.prune_xml(xml_path, result_data)`, devuelve la ruta del XML podado.
      - `"text_list"` → `XmlService.extract_text(xml_path, result_data)`, devuelve la lista de strings filtrada.
 
@@ -72,6 +73,7 @@ service → binarios externos (resources/*) o librerías (bs4, pdf2docx, request
 | `pipeline_service.py` | `PipelineService.replace_data(pipeline, extracted_data)` — recorre recursivamente un JSON (dicts/listas anidadas) y reemplaza cada llave `"data"` por `extracted_data`. |
 | `tsubasa_service.py` | `TsubasaService` — **singleton** que gestiona el ciclo de vida del binario `resources/tsubasa` (`start`/`stop`, subprocess) y llama a su endpoint HTTP `/execute` (vía `requests`), aplanando la respuesta (`outputs`/`series`/`dataframe`) a una lista de valores puros. |
 | `cross_encoder_service.py` | `CrossEncoderService` — **singleton** que carga (una sola vez) el modelo `jina-reranker-v2-base-multilingual` (`models_ai/`, no versionado) vía `sentence_transformers.CrossEncoder`. `rerank(query, candidates, top_k=None)` reordena `candidates` por relevancia semántica contra `query` y opcionalmente los recorta a `top_k`. |
+| `nuextract_service.py` | `NuExtractService` — **singleton** que carga (una sola vez) el modelo `NuExtract-tiny` (`models_ai/`, no versionado) vía `transformers.AutoModelForCausalLM`. `extract(text, schema)` arma el prompt `<|input|>/### Template/### Text/<|output|>`, genera con el modelo y devuelve el `dict` resultante de parsear el JSON generado. |
 
 ### `models/` y `views/`
 
@@ -100,13 +102,13 @@ Definidas en el [Dockerfile](../Dockerfile), junto con `EXPOSE 8000 5000`.
 
 ```
 Cliente
-  │  multipart/form-data: file, pipeline (json), mode
+  │  multipart/form-data: file, pipeline (json), mode [, query, top_k] [, schema]
   ▼
 pipeline_controller.execute_pipeline
   │  valida extensión y mode
   │  file_manager.temp_input_file(contents, extension) → input_path
   ▼
-ocr_orchestrator.run(input_path, pipeline, mode)
+ocr_orchestrator.run(input_path, pipeline, mode, query, top_k, schema)
   │
   ├─ xml_orchestrator.get_xml(input_path)
   │     └─ (si .pdf) pdf_service.convert_to_docx → xmljava_service.convert → xml_path
@@ -114,8 +116,11 @@ ocr_orchestrator.run(input_path, pipeline, mode)
   ├─ xml_service.extract_tables(xml_path) → extracted_data
   ├─ pipeline_service.replace_data(pipeline, extracted_data) → pipeline transformado
   ├─ tsubasa_service.execute(pipeline) → result_data (lista de valores)
+  ├─ (si query) cross_encoder_service.rerank(query, result_data, top_k) → result_data
   │
-  └─ mode == "pruned_xml"?
+  ├─ (si schema) nuextract_service.extract(texto de result_data, schema) → dict, devuelve directo
+  │
+  └─ (si no hay schema) mode == "pruned_xml"?
         sí → xml_service.prune_xml(xml_path, result_data) → xml_path_podado
         no → xml_service.extract_text(xml_path, result_data) → list[str]
   ▼

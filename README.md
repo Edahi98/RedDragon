@@ -30,7 +30,7 @@ graph TD
         Preservice["📁 preservices/<br/>preservice_filemanager.py"]
         Orchestrator["🧭 orchestrators/<br/>ocr_orchestrator.py"]
         XmlOrch["🧭 orchestrators/<br/>xml_orchestrator.py"]
-        Services["🔧 services/<br/>pdf · xmljava · xml · pipeline · tsubasa · cross_encoder"]
+        Services["🔧 services/<br/>pdf · xmljava · xml · pipeline · tsubasa · cross_encoder · nuextract"]
         Model["📦 models/<br/>pipeline_models.py"]
         View["🖼️ views/<br/>pipeline_view.py"]
     end
@@ -64,8 +64,9 @@ sequenceDiagram
     participant PS as 🔧 PipelineService
     participant TS as 🔧 TsubasaService
     participant CE as 🧠 CrossEncoderService
+    participant NE as 🧩 NuExtractService
 
-    U->>C: file + pipeline (json) + mode [+ query, top_k]
+    U->>C: file + pipeline (json) + mode [+ query, top_k] [+ schema]
     C->>FM: temp_input_file(contents, extension)
     FM-->>C: input_path (temporal)
     C->>OCR: run(input_path, pipeline, mode)
@@ -86,7 +87,10 @@ sequenceDiagram
         OCR->>CE: rerank(query, result_data, top_k)
         CE-->>OCR: result_data reordenado/filtrado
     end
-    alt mode == pruned_xml
+    alt schema presente
+        OCR->>NE: extract(texto de result_data, schema)
+        NE-->>OCR: JSON estructurado (reemplaza el resultado de mode)
+    else mode == pruned_xml
         OCR->>XS: prune_xml(xml_path, result_data)
         XS-->>OCR: ruta xml podado
     else mode == text_list
@@ -133,7 +137,7 @@ RedDragon/
 - 🟢 Node.js + npm (solo para el frontend)
 - 🐳 Docker (opcional, recomendado)
 - 🐧 Linux (los binarios en `resources/` son ELF; en Windows solo funcionan dentro de Docker/WSL)
-- 🧠 El modelo de reranking (ver [🧠 Modelo de reranking](#-modelo-de-reranking-cross-encoder) abajo)
+- 🧠 Los modelos de IA locales (ver [🧠 Modelo de reranking](#-modelo-de-reranking-cross-encoder) y [🧩 Modelo de extracción estructurada](#-modelo-de-extracción-estructurada-nuextract) abajo)
 
 ---
 
@@ -150,6 +154,22 @@ huggingface-cli download jinaai/jina-reranker-v2-base-multilingual --local-dir m
 ```
 
 > ⚠️ Requiere `transformers` en el rango `>=4.41.0,<5` (ya fijado en `pyproject.toml`) — el código custom del modelo (`trust_remote_code=True`) depende de un símbolo interno que las versiones `5.x` de `transformers` eliminaron.
+
+---
+
+## 🧩 Modelo de extracción estructurada (NuExtract)
+
+`services/nuextract_service.py` usa **[NuExtract-tiny](https://huggingface.co/numind/NuExtract-tiny)** (Qwen2-0.5B fine-tuneado por NuMind) para rellenar un esquema JSON con datos encontrados en un texto. No está versionado en este repo — hay que descargarlo aparte y colocarlo en `models_ai/NuExtract-tiny`:
+
+```bash
+# Opción A: git + git-lfs
+git clone https://huggingface.co/numind/NuExtract-tiny models_ai/NuExtract-tiny
+
+# Opción B: huggingface-cli
+huggingface-cli download numind/NuExtract-tiny --local-dir models_ai/NuExtract-tiny
+```
+
+> A diferencia de `jina-reranker`, este modelo usa una arquitectura estándar (`Qwen2ForCausalLM`) — no requiere `trust_remote_code=True` ni depende del pin especial de `transformers`.
 
 ---
 
@@ -210,6 +230,7 @@ npm run dev
 | `mode` | string | `"pruned_xml"` o `"text_list"` |
 | `query` | string (opcional) | si se envía, reordena `result_data` por relevancia semántica contra esta query (`services/cross_encoder_service.py`) antes de podar/filtrar |
 | `top_k` | int (opcional) | junto con `query`, recorta el resultado reordenado a los `top_k` más relevantes |
+| `schema` | string (JSON, opcional) | plantilla de campos a extraer (ej. `{"Nombre": "", "Monto": ""}`). Si se envía, `NuExtractService` rellena ese esquema con datos de `result_data` (ya reordenado por `query` si vino) y **ese JSON reemplaza el `result` de `mode`** |
 
 **Respuesta** (`200`):
 
@@ -218,6 +239,16 @@ npm run dev
   "filename": "reporte.docx",
   "mode": "text_list",
   "result": ["..."]
+}
+```
+
+Con `schema` (`result` es el JSON extraído en vez de lo anterior):
+
+```json
+{
+  "filename": "reporte.docx",
+  "mode": "text_list",
+  "result": { "Nombre": "...", "Monto": "..." }
 }
 ```
 
