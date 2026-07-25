@@ -61,9 +61,11 @@ sequenceDiagram
     participant PDF as 🔧 PdfService
     participant XJ as 🔧 XmlJavaService
     participant XS as 🔧 XmlService
+    participant MD as 🔧 MarkdownService
     participant PS as 🔧 PipelineService
     participant TS as 🔧 TsubasaService
     participant CE as 🧠 CrossEncoderService
+    participant RD as 🧠 RedactorService
     participant NE as 🧩 NuExtractService
 
     U->>C: file + pipeline (json) + mode [+ query, top_k] [+ schema]
@@ -88,7 +90,13 @@ sequenceDiagram
         CE-->>OCR: result_data reordenado/filtrado
     end
     alt schema presente
-        OCR->>NE: extract(texto de result_data, schema)
+        OCR->>XS: prune_xml(xml_path, result_data)
+        XS-->>OCR: ruta xml podado
+        OCR->>MD: to_markdown(ruta xml podado)
+        MD-->>OCR: texto en markdown (párrafos + tablas)
+        OCR->>RD: redact(markdown)
+        RD-->>OCR: prosa
+        OCR->>NE: extract(prosa, schema)
         NE-->>OCR: JSON estructurado (reemplaza el resultado de mode)
     else mode == pruned_xml
         OCR->>XS: prune_xml(xml_path, result_data)
@@ -226,11 +234,11 @@ npm run dev
 | Campo | Tipo | Descripción |
 |---|---|---|
 | `file` | archivo | `doc`, `docx`, `xls`, `xlsx` o `pdf` |
-| `pipeline` | string (JSON) | grafo de nodos (`graph.nodes.*`) a ejecutar en Tsubasa |
+| `pipeline` | string (JSON) | grafo de nodos (`graph.nodes.*`) a ejecutar en Tsubasa. Cada nodo `"data": {}` se reemplaza con `{"dato": [...]}` (columna `"dato"`) — referencia esa columna en tus `select`/`filter`/etc. |
 | `mode` | string | `"pruned_xml"` o `"text_list"` |
 | `query` | string (opcional) | si se envía, reordena `result_data` por relevancia semántica contra esta query (`services/cross_encoder_service.py`) antes de podar/filtrar |
 | `top_k` | int (opcional) | junto con `query`, recorta el resultado reordenado a los `top_k` más relevantes |
-| `schema` | string (JSON, opcional) | plantilla de campos a extraer (ej. `{"Nombre": "", "Monto": ""}`). Si se envía, `NuExtractService` rellena ese esquema con datos de `result_data` (ya reordenado por `query` si vino) y **ese JSON reemplaza el `result` de `mode`** |
+| `schema` | string (JSON, opcional) | plantilla de campos a extraer (ej. `{"Nombre": "", "Monto": ""}`). Si se envía, el resultado de Tsubasa se poda contra el XML (`XmlService.prune_xml`), se renderiza en Markdown (`MarkdownService.to_markdown`), se redacta en prosa (`RedactorService.redact`) y `NuExtractService` rellena el esquema contra esa prosa — **ese JSON reemplaza el `result` de `mode`** |
 
 **Respuesta** (`200`):
 
