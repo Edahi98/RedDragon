@@ -1,5 +1,6 @@
 from orchestrators.xml_orchestrator import XmlOrchestrator
 from services.cross_encoder_service import CrossEncoderService
+from services.nuextract_service import NuExtractService
 from services.pipeline_service import PipelineService
 from services.tsubasa_service import TsubasaService
 from services.xml_service import XmlService
@@ -16,6 +17,7 @@ class OcrOrchestrator:
         self.pipeline_service = PipelineService()
         self.tsubasa_service = TsubasaService()
         self.cross_encoder_service = CrossEncoderService()
+        self.nuextract_service = NuExtractService()
 
     def run(
         self,
@@ -24,7 +26,8 @@ class OcrOrchestrator:
         mode: str,
         query: str | None = None,
         top_k: int | None = None,
-    ) -> str | list[str]:
+        schema: dict | None = None,
+    ) -> str | list[str] | dict:
         if mode not in ALLOWED_MODES:
             raise ValueError(f"Unsupported mode '{mode}'. Allowed: {sorted(ALLOWED_MODES)}")
 
@@ -37,6 +40,10 @@ class OcrOrchestrator:
 
         if query:
             result_data = self.cross_encoder_service.rerank(query, result_data, top_k)
+
+        if schema:
+            text = " ".join(str(item) for item in result_data)
+            return self.nuextract_service.extract(text, schema)
 
         if mode == "pruned_xml":
             return self.xml_service.prune_xml(xml_path, result_data)
