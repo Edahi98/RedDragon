@@ -8,7 +8,7 @@ class PipelineService:
         if isinstance(obj, dict):
             for key, value in obj.items():
                 if key == "data":
-                    obj[key] = extracted_data
+                    obj[key] = {"dato": extracted_data}
                 else:
                     self._replace_data_keys(value, extracted_data)
         elif isinstance(obj, list):

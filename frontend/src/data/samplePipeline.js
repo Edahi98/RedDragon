@@ -7,14 +7,9 @@ export const samplePipelineJson = JSON.stringify(
           data: {},
         },
         ast_1: {
-          type: 'filter',
+          type: 'select',
           input: 'ast_0',
-          predicate: {
-            type: 'binary',
-            op: '>',
-            left: { type: 'col', name: 'revenue' },
-            right: { type: 'lit', value: 100, dtype: null },
-          },
+          exprs: [{ type: 'col', name: 'dato' }],
         },
       },
       outputs: ['ast_1'],

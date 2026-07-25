@@ -19,6 +19,9 @@ frontend/.vite/
 .env.*
 !.env.example
 
+# AI models (downloaded locally, not versioned — see README)
+models_ai/
+
 # Editor/OS
 .vscode/
 .idea/

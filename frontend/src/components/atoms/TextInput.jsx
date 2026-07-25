@@ -5,23 +5,20 @@ const ACCENT_CLASSES = {
   orange: 'focus:ring-orange-400 focus:border-orange-400 border-orange-200',
 }
 
-export function Select({ id, value, onChange, options, disabled = false, accent = 'orange' }) {
+export function TextInput({ id, type = 'text', value, onChange, placeholder, min, disabled = false, accent = 'orange' }) {
   const accentStyle = ACCENT_CLASSES[accent] || ACCENT_CLASSES.orange
 
   return (
-    <select
+    <input
       id={id}
+      type={type}
       value={value}
       onChange={onChange}
+      placeholder={placeholder}
+      min={min}
       disabled={disabled}
       className={`w-full px-3 py-2 border rounded-md bg-white/80 focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed ${accentStyle}`}
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+    />
   )
 }
 

@@ -9,7 +9,7 @@ export function HomePage() {
 
   return (
     <MainTemplate
-      header={<Header title="RedDragon" subtitle="Entorno de pruebas para /execute_pipeline" />}
+      header={<Header title="RedDragon" subtitle="Sube un documento y obtén la información que necesitas fácilmente" />}
     >
       <PipelineForm onSubmit={execute} isLoading={isLoading} />
       <ResultPanel result={result} error={error} isLoading={isLoading} />

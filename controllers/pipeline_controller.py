@@ -16,7 +16,14 @@ file_manager = PreserviceFileManager()
 
 
 @router.post("/execute_pipeline", response_model=PipelineResponse)
-async def execute_pipeline(file: UploadFile, pipeline: str = Form(...), mode: str = Form(...)):
+async def execute_pipeline(
+    file: UploadFile,
+    pipeline: str = Form(...),
+    mode: str = Form(...),
+    query: str | None = Form(None),
+    top_k: int | None = Form(None),
+    schema: str | None = Form(None),
+):
     extension = Path(file.filename or "").suffix.lower()
 
     if extension not in ALLOWED_EXTENSIONS:
@@ -32,12 +39,13 @@ async def execute_pipeline(file: UploadFile, pipeline: str = Form(...), mode: st
         )
 
     pipeline_data = json.loads(pipeline)
+    schema_data = json.loads(schema) if schema else None
     contents = await file.read()
 
     with file_manager.temp_input_file(contents, extension) as input_path:
-        result = ocr_orchestrator.run(input_path, pipeline_data, mode)
+        result = ocr_orchestrator.run(input_path, pipeline_data, mode, query, top_k, schema_data)
 
-        if mode == "pruned_xml":
+        if not schema_data and mode == "pruned_xml":
             with open(result, "r", encoding="utf-8") as f:
                 result = f.read()
 

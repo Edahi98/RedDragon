@@ -30,7 +30,7 @@ graph TD
         Preservice["📁 preservices/<br/>preservice_filemanager.py"]
         Orchestrator["🧭 orchestrators/<br/>ocr_orchestrator.py"]
         XmlOrch["🧭 orchestrators/<br/>xml_orchestrator.py"]
-        Services["🔧 services/<br/>pdf · xmljava · xml · pipeline · tsubasa"]
+        Services["🔧 services/<br/>pdf · xmljava · xml · pipeline · tsubasa · cross_encoder · nuextract"]
         Model["📦 models/<br/>pipeline_models.py"]
         View["🖼️ views/<br/>pipeline_view.py"]
     end
@@ -61,10 +61,14 @@ sequenceDiagram
     participant PDF as 🔧 PdfService
     participant XJ as 🔧 XmlJavaService
     participant XS as 🔧 XmlService
+    participant MD as 🔧 MarkdownService
     participant PS as 🔧 PipelineService
     participant TS as 🔧 TsubasaService
+    participant CE as 🧠 CrossEncoderService
+    participant RD as 🧠 RedactorService
+    participant NE as 🧩 NuExtractService
 
-    U->>C: file + pipeline (json) + mode
+    U->>C: file + pipeline (json) + mode [+ query, top_k] [+ schema]
     C->>FM: temp_input_file(contents, extension)
     FM-->>C: input_path (temporal)
     C->>OCR: run(input_path, pipeline, mode)
@@ -81,7 +85,20 @@ sequenceDiagram
     PS-->>OCR: pipeline transformado
     OCR->>TS: execute(pipeline)
     TS-->>OCR: result_data (lista de valores)
-    alt mode == pruned_xml
+    opt query presente
+        OCR->>CE: rerank(query, result_data, top_k)
+        CE-->>OCR: result_data reordenado/filtrado
+    end
+    alt schema presente
+        OCR->>XS: prune_xml(xml_path, result_data)
+        XS-->>OCR: ruta xml podado
+        OCR->>MD: to_markdown(ruta xml podado)
+        MD-->>OCR: texto en markdown (párrafos + tablas)
+        OCR->>RD: redact(markdown)
+        RD-->>OCR: prosa
+        OCR->>NE: extract(prosa, schema)
+        NE-->>OCR: JSON estructurado (reemplaza el resultado de mode)
+    else mode == pruned_xml
         OCR->>XS: prune_xml(xml_path, result_data)
         XS-->>OCR: ruta xml podado
     else mode == text_list
@@ -108,6 +125,7 @@ RedDragon/
 ├── models/                        # 📦 schemas Pydantic
 ├── views/                          # 🖼️ formato de respuesta
 ├── resources/                       # 📄 binarios (xmljava-docker, tsubasa)
+├── models_ai/                        # 🧠 modelos de Hugging Face (no versionado, ver abajo)
 ├── scripts/start.sh                  # 🐧 arranque nativo en Linux (sin Docker)
 ├── docs/architecture.md               # 📚 arquitectura detallada
 ├── frontend/                            # ⚛️ React + Vite + TailwindCSS
@@ -127,6 +145,39 @@ RedDragon/
 - 🟢 Node.js + npm (solo para el frontend)
 - 🐳 Docker (opcional, recomendado)
 - 🐧 Linux (los binarios en `resources/` son ELF; en Windows solo funcionan dentro de Docker/WSL)
+- 🧠 Los modelos de IA locales (ver [🧠 Modelo de reranking](#-modelo-de-reranking-cross-encoder) y [🧩 Modelo de extracción estructurada](#-modelo-de-extracción-estructurada-nuextract) abajo)
+
+---
+
+## 🧠 Modelo de reranking (cross-encoder)
+
+`services/cross_encoder_service.py` usa el modelo **[jina-reranker-v2-base-multilingual](https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual)** vía `sentence-transformers`. No está versionado en este repo (pesa varios GB) — hay que descargarlo aparte y colocarlo en `models_ai/jina-reranker-v2-base-multilingual`:
+
+```bash
+# Opción A: git + git-lfs
+git clone https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual models_ai/jina-reranker-v2-base-multilingual
+
+# Opción B: huggingface-cli
+huggingface-cli download jinaai/jina-reranker-v2-base-multilingual --local-dir models_ai/jina-reranker-v2-base-multilingual
+```
+
+> ⚠️ Requiere `transformers` en el rango `>=4.41.0,<5` (ya fijado en `pyproject.toml`) — el código custom del modelo (`trust_remote_code=True`) depende de un símbolo interno que las versiones `5.x` de `transformers` eliminaron.
+
+---
+
+## 🧩 Modelo de extracción estructurada (NuExtract)
+
+`services/nuextract_service.py` usa **[NuExtract-tiny](https://huggingface.co/numind/NuExtract-tiny)** (Qwen2-0.5B fine-tuneado por NuMind) para rellenar un esquema JSON con datos encontrados en un texto. No está versionado en este repo — hay que descargarlo aparte y colocarlo en `models_ai/NuExtract-tiny`:
+
+```bash
+# Opción A: git + git-lfs
+git clone https://huggingface.co/numind/NuExtract-tiny models_ai/NuExtract-tiny
+
+# Opción B: huggingface-cli
+huggingface-cli download numind/NuExtract-tiny --local-dir models_ai/NuExtract-tiny
+```
+
+> A diferencia de `jina-reranker`, este modelo usa una arquitectura estándar (`Qwen2ForCausalLM`) — no requiere `trust_remote_code=True` ni depende del pin especial de `transformers`.
 
 ---
 
@@ -183,8 +234,11 @@ npm run dev
 | Campo | Tipo | Descripción |
 |---|---|---|
 | `file` | archivo | `doc`, `docx`, `xls`, `xlsx` o `pdf` |
-| `pipeline` | string (JSON) | grafo de nodos (`graph.nodes.*`) a ejecutar en Tsubasa |
+| `pipeline` | string (JSON) | grafo de nodos (`graph.nodes.*`) a ejecutar en Tsubasa. Cada nodo `"data": {}` se reemplaza con `{"dato": [...]}` (columna `"dato"`) — referencia esa columna en tus `select`/`filter`/etc. |
 | `mode` | string | `"pruned_xml"` o `"text_list"` |
+| `query` | string (opcional) | si se envía, reordena `result_data` por relevancia semántica contra esta query (`services/cross_encoder_service.py`) antes de podar/filtrar |
+| `top_k` | int (opcional) | junto con `query`, recorta el resultado reordenado a los `top_k` más relevantes |
+| `schema` | string (JSON, opcional) | plantilla de campos a extraer (ej. `{"Nombre": "", "Monto": ""}`). Si se envía, el resultado de Tsubasa se poda contra el XML (`XmlService.prune_xml`), se renderiza en Markdown (`MarkdownService.to_markdown`), se redacta en prosa (`RedactorService.redact`) y `NuExtractService` rellena el esquema contra esa prosa — **ese JSON reemplaza el `result` de `mode`** |
 
 **Respuesta** (`200`):
 
@@ -193,6 +247,16 @@ npm run dev
   "filename": "reporte.docx",
   "mode": "text_list",
   "result": ["..."]
+}
+```
+
+Con `schema` (`result` es el JSON extraído en vez de lo anterior):
+
+```json
+{
+  "filename": "reporte.docx",
+  "mode": "text_list",
+  "result": { "Nombre": "...", "Monto": "..." }
 }
 ```
 
